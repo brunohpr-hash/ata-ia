@@ -1,0 +1,7 @@
+keyboard==0.13.5
+requests>=2.31
+pyperclip==1.9.0
+pystray==0.19.5
+Pillow>=10.0
+numpy>=1.26
+soundcard>=0.4.3

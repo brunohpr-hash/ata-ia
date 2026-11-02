@@ -1,0 +1,4 @@
+{
+  "version": "1.0.0",
+  "changelog": "Primeira versão do Ata IA: grave reuniões sem bot (microfone + áudio do sistema), receba a ata estruturada ao encerrar (resumo, decisões, ações com responsável/prazo, pendências) e transcreva arquivos de áudio prontos (ex.: áudios de WhatsApp). Tudo local, com histórico pesquisável e atualização pela nuvem."
+}
