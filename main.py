@@ -29,7 +29,7 @@ import requests
 from PIL import Image, ImageDraw
 
 APP_NAME = "Ata IA"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 UPDATE_REPO = "brunohpr-hash/ata-ia"
 UPDATE_RAW = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main"
 APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "AtaIA"
@@ -307,9 +307,17 @@ class ChannelRecorder(threading.Thread):
     def run(self):
         com_ok = False
         if os.name == "nt":
-            # COM precisa ser inicializado EM CADA thread que usa áudio WASAPI.
-            # Sem isso, a 2ª reunião em diante morre com Error 0x800401f0
-            # (CO_E_NOTINITIALIZED) — bug de campo, 03/11/2026.
+            # Ordem IMPORTA: a soundcard precisa ser importada ANTES do nosso
+            # CoInitializeEx (ela trata COM já-inicializado como erro fatal:
+            # Error 0x100000001). Se o pré-carregamento do app já a importou,
+            # isto é instantâneo; senão, importa aqui com o COM virgem.
+            if "soundcard" not in sys.modules:
+                try:
+                    import soundcard  # noqa: F401
+                except Exception:
+                    pass
+            # COM por thread: sem isto, a 2ª reunião em diante morre com
+            # Error 0x800401f0 (CO_E_NOTINITIALIZED) — bug de campo.
             try:
                 import ctypes
                 hr = ctypes.windll.ole32.CoInitializeEx(None, 0)
@@ -1110,6 +1118,19 @@ class AtaApp:
     def run(self):
         APP_DIR.mkdir(parents=True, exist_ok=True)
         MEETINGS_DIR.mkdir(parents=True, exist_ok=True)
+        # Pré-carrega a biblioteca de áudio NA THREAD PRINCIPAL, com o COM
+        # ainda virgem. A soundcard inicializa o COM ao ser importada e
+        # TRATA "já inicializado" como erro fatal (Error 0x100000001 /
+        # S_FALSE) — bug de campo 03/11/2026: se a 1ª importação acontecer
+        # dentro de uma thread de gravação que já chamou CoInitializeEx,
+        # ela morre no nascimento. Importando aqui, as threads de gravação
+        # recebem o módulo pronto e só precisam do CoInitializeEx próprio.
+        if os.name == "nt":
+            try:
+                import soundcard  # noqa: F401
+                log("audio: biblioteca soundcard carregada na thread principal")
+            except Exception as e:
+                log(f"audio: falha ao pré-carregar soundcard: {e}")
         if not self.cfg.get("api_key"):
             self.open_settings()
         self.register_hotkey()

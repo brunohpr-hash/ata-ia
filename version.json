@@ -1,4 +1,4 @@
 {
-  "version": "1.0.3",
-  "changelog": "Gravação de reunião blindada contra o descanso do PC: (1) durante a gravação o app segura o Windows acordado (tela pode apagar, sistema não dorme — captura segue); (2) reunião em andamento é sagrada: o reinício pós-desbloqueio agora espera a reunião encerrar em vez de matar a gravação; (3) se um canal de áudio falhar ao iniciar, alerta imediato na tela (não só no log)."
+  "version": "1.0.4",
+  "changelog": "Correção do Error 0x100000001 ao iniciar gravação (efeito colateral da v1.0.2): a biblioteca de áudio exige ser carregada ANTES da inicialização COM da thread — agora o app a pré-carrega na abertura e cada gravador respeita a ordem certa. Cobre os dois erros de campo (0x800401f0 e 0x100000001)."
 }
