@@ -29,7 +29,7 @@ import requests
 from PIL import Image, ImageDraw
 
 APP_NAME = "Ata IA"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 UPDATE_REPO = "brunohpr-hash/ata-ia"
 UPDATE_RAW = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main"
 APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "AtaIA"
@@ -305,6 +305,17 @@ class ChannelRecorder(threading.Thread):
         self.error = None
 
     def run(self):
+        com_ok = False
+        if os.name == "nt":
+            # COM precisa ser inicializado EM CADA thread que usa áudio WASAPI.
+            # Sem isso, a 2ª reunião em diante morre com Error 0x800401f0
+            # (CO_E_NOTINITIALIZED) — bug de campo, 03/11/2026.
+            try:
+                import ctypes
+                hr = ctypes.windll.ole32.CoInitializeEx(None, 0)
+                com_ok = hr in (0, 1)  # S_OK / S_FALSE
+            except Exception:
+                pass
         try:
             import soundcard as sc
             if self.device_kind == "mic":
@@ -348,6 +359,13 @@ class ChannelRecorder(threading.Thread):
         except Exception as e:
             self.error = str(e)
             log(f"gravador[{self.channel}]: ERRO: {e}\n{traceback.format_exc()}")
+        finally:
+            if com_ok:
+                try:
+                    import ctypes
+                    ctypes.windll.ole32.CoUninitialize()
+                except Exception:
+                    pass
 
     def _emit(self, arr, samplerate, chunk_start):
         mono16k = downsample_to_16k(arr, samplerate)
