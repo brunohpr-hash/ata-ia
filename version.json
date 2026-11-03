@@ -1,4 +1,4 @@
 {
-  "version": "1.0.0",
-  "changelog": "Primeira versão do Ata IA: grave reuniões sem bot (microfone + áudio do sistema), receba a ata estruturada ao encerrar (resumo, decisões, ações com responsável/prazo, pendências) e transcreva arquivos de áudio prontos (ex.: áudios de WhatsApp). Tudo local, com histórico pesquisável e atualização pela nuvem."
+  "version": "1.0.1",
+  "changelog": "Escudo pós-bloqueio: Ctrl+Shift+R continua vivo após bloqueio de tela/suspensão (eventos oficiais do Windows + reinício automático + watchdog reserva — padrão validado no Ditado IA)."
 }

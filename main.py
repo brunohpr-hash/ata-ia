@@ -29,7 +29,7 @@ import requests
 from PIL import Image, ImageDraw
 
 APP_NAME = "Ata IA"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 UPDATE_REPO = "brunohpr-hash/ata-ia"
 UPDATE_RAW = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main"
 APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "AtaIA"
@@ -409,6 +409,7 @@ class AtaApp:
         self.cfg = load_config()
         self.recording = False
         self.busy = False
+        self._recovering = False
         self.icon = None
         self._recorders = []
         self._transcriber = None
@@ -756,6 +757,123 @@ class AtaApp:
             pass
         keyboard.add_hotkey(self.cfg["hotkey"], self.toggle_meeting, suppress=False)
 
+
+    # ---------- recuperação pós bloqueio/suspensão (padrão validado no Ditado IA)
+    def _recover(self, motivo):
+        if self._recovering:
+            return
+        self._recovering = True
+        try:
+            time.sleep(3)
+            espera = 0
+            while (self.recording or self.busy) and espera < 120:
+                time.sleep(1)
+                espera += 1
+            log(f"recuperacao: reiniciando o app apos {motivo}")
+            restart_app(self.icon)
+        except Exception as e:
+            log(f"recuperacao falhou ({motivo}): {e}")
+            self._recovering = False
+
+    def _session_listener(self):
+        if os.name != "nt":
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            wtsapi = ctypes.windll.wtsapi32
+
+            WM_WTSSESSION_CHANGE = 0x02B1
+            WTS_SESSION_UNLOCK = 0x8
+            WM_POWERBROADCAST = 0x218
+            PBT_APMRESUMESUSPEND = 0x7
+            PBT_APMRESUMEAUTOMATIC = 0x12
+            NOTIFY_FOR_THIS_SESSION = 0
+
+            WNDPROC = ctypes.WINFUNCTYPE(
+                ctypes.c_longlong, wintypes.HWND, ctypes.c_uint,
+                wintypes.WPARAM, wintypes.LPARAM)
+
+            def wnd_proc(hwnd, msg, wparam, lparam):
+                try:
+                    if msg == WM_WTSSESSION_CHANGE and wparam == WTS_SESSION_UNLOCK:
+                        log("evento do Windows: sessao desbloqueada")
+                        threading.Thread(target=self._recover,
+                                         args=("desbloqueio de sessao",),
+                                         daemon=True).start()
+                    elif msg == WM_POWERBROADCAST and wparam in (
+                            PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC):
+                        log("evento do Windows: retomada da suspensao")
+                        threading.Thread(target=self._recover,
+                                         args=("retomada da suspensao",),
+                                         daemon=True).start()
+                except Exception as e:
+                    log(f"session_listener wnd_proc: {e}")
+                return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+            proc = WNDPROC(wnd_proc)
+            self._session_wndproc = proc
+
+            class WNDCLASS(ctypes.Structure):
+                _fields_ = [
+                    ("style", ctypes.c_uint),
+                    ("lpfnWndProc", WNDPROC),
+                    ("cbClsExtra", ctypes.c_int),
+                    ("cbWndExtra", ctypes.c_int),
+                    ("hInstance", wintypes.HINSTANCE),
+                    ("hIcon", wintypes.HICON),
+                    ("hCursor", wintypes.HANDLE),
+                    ("hbrBackground", wintypes.HBRUSH),
+                    ("lpszMenuName", wintypes.LPCWSTR),
+                    ("lpszClassName", wintypes.LPCWSTR),
+                ]
+
+            hinst = kernel32.GetModuleHandleW(None)
+            wc = WNDCLASS()
+            wc.style = 0
+            wc.lpfnWndProc = proc
+            wc.hInstance = hinst
+            wc.lpszClassName = "AtaIASessionWatcher"
+            if not user32.RegisterClassW(ctypes.byref(wc)):
+                log(f"session_listener: RegisterClass falhou ({ctypes.GetLastError()})")
+                return
+
+            hwnd = user32.CreateWindowExW(
+                0, wc.lpszClassName, "AtaIA Watcher", 0,
+                0, 0, 0, 0, None, None, hinst, None)
+            if not hwnd:
+                log(f"session_listener: CreateWindow falhou ({ctypes.GetLastError()})")
+                return
+
+            if not wtsapi.WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION):
+                log(f"session_listener: WTSRegister falhou ({ctypes.GetLastError()})")
+            else:
+                log("session_listener: registrado para eventos de sessao do Windows")
+
+            msg = wintypes.MSG()
+            while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+        except Exception as e:
+            log(f"session_listener: erro fatal: {e}")
+
+    def _watchdog(self):
+        intervalo = 15
+        ultimo = time.monotonic()
+        while True:
+            time.sleep(intervalo)
+            agora = time.monotonic()
+            saltou = (agora - ultimo) > (intervalo + 25)
+            ultimo = agora
+            if saltou and not self._recovering:
+                log("watchdog reserva: salto de relogio detectado (suspensao)")
+                threading.Thread(target=self._recover,
+                                 args=("suspensao (reserva)",),
+                                 daemon=True).start()
+
     def _rehook_patrol(self):
         while True:
             time.sleep(120)
@@ -926,6 +1044,8 @@ class AtaApp:
         self.register_hotkey()
         threading.Timer(8.0, lambda: self.do_update_check(silent=True)).start()
         threading.Thread(target=self._rehook_patrol, daemon=True).start()
+        threading.Thread(target=self._session_listener, daemon=True).start()
+        threading.Thread(target=self._watchdog, daemon=True).start()
         self.run_tray()
 
 
