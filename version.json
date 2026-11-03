@@ -1,4 +1,4 @@
 {
-  "version": "1.0.2",
-  "changelog": "Correção crítica da gravação: a partir da 2ª reunião os gravadores podiam morrer no nascimento com Error 0x800401f0 (COM não inicializado na thread de áudio) — reunião inteira sem captura. Agora cada gravador inicializa o COM do Windows na própria thread antes de abrir o microfone/áudio do sistema."
+  "version": "1.0.3",
+  "changelog": "Gravação de reunião blindada contra o descanso do PC: (1) durante a gravação o app segura o Windows acordado (tela pode apagar, sistema não dorme — captura segue); (2) reunião em andamento é sagrada: o reinício pós-desbloqueio agora espera a reunião encerrar em vez de matar a gravação; (3) se um canal de áudio falhar ao iniciar, alerta imediato na tela (não só no log)."
 }

@@ -29,7 +29,7 @@ import requests
 from PIL import Image, ImageDraw
 
 APP_NAME = "Ata IA"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 UPDATE_REPO = "brunohpr-hash/ata-ia"
 UPDATE_RAW = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main"
 APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "AtaIA"
@@ -434,6 +434,29 @@ class AtaApp:
         self._t0 = None
         self._overlay_stop = None
         self._meeting_title = ""
+        self._restart_apos_reuniao = False
+
+    # ---------- manter o PC acordado durante a reunião
+    @staticmethod
+    def _keep_awake(ligar):
+        """Durante a gravação, pede ao Windows para NÃO dormir nem desligar
+        o áudio (a tela pode apagar normalmente — isso não afeta a captura).
+        ES_CONTINUOUS | ES_SYSTEM_REQUIRED segura o sistema acordado."""
+        if os.name != "nt":
+            return
+        try:
+            import ctypes
+            ES_CONTINUOUS = 0x80000000
+            ES_SYSTEM_REQUIRED = 0x00000001
+            if ligar:
+                ctypes.windll.kernel32.SetThreadExecutionState(
+                    ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+                log("keep-awake: sistema seguro acordado durante a reunião")
+            else:
+                ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+                log("keep-awake: liberado (reunião encerrada)")
+        except Exception as e:
+            log(f"keep-awake falhou: {e}")
 
     # ---------- reunião ao vivo
     def toggle_meeting(self):
@@ -467,9 +490,23 @@ class AtaApp:
             self._recorders.append(rec_sys)
 
         beep(880, 120)
+        self._keep_awake(True)
         log(f"reunião iniciada: {self._meeting_title}")
         self.notify("Gravando a reunião. Use o atalho ou a janelinha para encerrar.")
         self._show_overlay()
+
+        # sentinela: se um gravador morrer no nascimento, avisa ALTO na hora
+        def vigia_nascimento():
+            time.sleep(5)
+            if not self.recording:
+                return
+            mortos = [r.channel for r in self._recorders if r.error]
+            if mortos:
+                self.notify("⚠️ PROBLEMA NA GRAVAÇÃO: canal "
+                            + " e ".join(mortos) +
+                            " falhou ao iniciar! Encerre e tente de novo. "
+                            "Detalhes no app.log.")
+        threading.Thread(target=vigia_nascimento, daemon=True).start()
 
     def stop_meeting(self):
         if not self.recording:
@@ -477,6 +514,7 @@ class AtaApp:
         self.recording = False
         self.busy = True
         try:
+            self._keep_awake(False)
             beep(660, 120)
             if self._overlay_stop:
                 try:
@@ -530,6 +568,12 @@ class AtaApp:
             self._show_result(self._meeting_title, ata, transcript, folder)
         finally:
             self.busy = False
+            if self._restart_apos_reuniao:
+                self._restart_apos_reuniao = False
+                log("recuperacao adiada: executando reinicio pos-reuniao")
+                threading.Thread(target=lambda: (time.sleep(5),
+                                                 restart_app(self.icon)),
+                                 daemon=True).start()
 
     # ---------- overlay da gravação
     def _show_overlay(self):
@@ -783,8 +827,17 @@ class AtaApp:
         self._recovering = True
         try:
             time.sleep(3)
+            # REUNIÃO EM ANDAMENTO É SAGRADA: nunca reiniciar no meio da
+            # gravação (mataria a captura). Marca para reiniciar DEPOIS que
+            # a reunião encerrar e sair da frente.
+            if self.recording:
+                self._restart_apos_reuniao = True
+                log(f"recuperacao adiada ({motivo}): reunião em andamento — "
+                    "app reinicia quando ela encerrar")
+                self._recovering = False
+                return
             espera = 0
-            while (self.recording or self.busy) and espera < 120:
+            while self.busy and espera < 600:
                 time.sleep(1)
                 espera += 1
             log(f"recuperacao: reiniciando o app apos {motivo}")
