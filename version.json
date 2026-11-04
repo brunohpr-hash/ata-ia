@@ -1,4 +1,4 @@
 {
-  "version": "1.0.5",
-  "changelog": "Ronda com prova de vida (tecla fantasma F24 + reinício automático se a escuta do teclado morrer) — mesma correção do Ditado v1.5.5. Nunca mais Ctrl+Shift+R mudo."
+  "version": "1.0.6",
+  "changelog": "Correção do alarme falso 'Escuta do teclado travou': o teste de vida agora injeta a tecla fantasma direto no Windows (VK_F24) e, se a injeção não for comprovada, a verificação é pulada em vez de contar como falha. Fim dos reinícios indevidos a cada poucos minutos."
 }

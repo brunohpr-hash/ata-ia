@@ -29,7 +29,7 @@ import requests
 from PIL import Image, ImageDraw
 
 APP_NAME = "Ata IA"
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 UPDATE_REPO = "brunohpr-hash/ata-ia"
 UPDATE_RAW = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main"
 APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "AtaIA"
@@ -981,11 +981,30 @@ class AtaApp:
                     continue
                 self.register_hotkey()
                 t0 = time.monotonic()
-                try:
-                    keyboard.press_and_release("f24")
-                except Exception:
-                    pass
+                injetou = False
+                if os.name == "nt":
+                    # injecao direta no Windows (VK_F24=0x87): nao depende do
+                    # mapeamento de nomes da lib keyboard, que pode falhar em
+                    # silencio p/ f24 (tempestade de reinicios de 04/11/2026)
+                    try:
+                        import ctypes
+                        ctypes.windll.user32.keybd_event(0x87, 0, 0, 0)
+                        ctypes.windll.user32.keybd_event(0x87, 0, 2, 0)
+                        injetou = True
+                    except Exception:
+                        pass
+                if not injetou:
+                    try:
+                        keyboard.press_and_release("f24")
+                        injetou = True
+                    except Exception:
+                        pass
                 time.sleep(1.0)
+                if not injetou:
+                    # sem injecao comprovada NAO ha teste valido — jamais
+                    # contar como falha (era isso que reiniciava os 4 apps)
+                    log("ronda: nao consegui injetar a tecla de teste — verificacao pulada")
+                    continue
                 if self._last_key_evt >= t0:
                     falhas = 0
                     log("ronda: atalho religado e escuta VERIFICADA viva")
