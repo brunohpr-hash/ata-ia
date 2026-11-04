@@ -29,7 +29,7 @@ import requests
 from PIL import Image, ImageDraw
 
 APP_NAME = "Ata IA"
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 UPDATE_REPO = "brunohpr-hash/ata-ia"
 UPDATE_RAW = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main"
 APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "AtaIA"
@@ -291,8 +291,13 @@ def restart_app(icon=None):
 # ---------------------------------------------------------------- gravadores
 
 class ChannelRecorder(threading.Thread):
-    """Grava um canal (microfone OU áudio do sistema) via biblioteca soundcard,
-    fatiando em blocos de chunk_seconds que vão para a fila de transcrição."""
+    """Grava um canal (microfone OU áudio do sistema), fatiando em blocos de
+    chunk_seconds que vão para a fila de transcrição.
+    MICROFONE usa o motor sounddevice/PortAudio (o mesmo do Ditado IA, tolerante
+    a qualquer formato de dispositivo); se indisponível, cai para soundcard.
+    LOOPBACK (áudio do sistema) usa soundcard (só ela faz WASAPI loopback).
+    Caso de campo 04/11/2026: mic de webcam (Logi C270) matava a soundcard com
+    AssertionError wFormatTag != 0xFFFE — reunião presencial de 36 min perdida."""
 
     def __init__(self, channel, device_kind, chunk_seconds, out_queue, t0):
         super().__init__(daemon=True)
@@ -303,6 +308,37 @@ class ChannelRecorder(threading.Thread):
         self.t0 = t0
         self.stop_flag = threading.Event()
         self.error = None
+        self.blocos_com_voz = 0   # blocos que passaram do filtro de silêncio
+
+    def _run_mic_sounddevice(self):
+        """Motor preferido do microfone: sounddevice (PortAudio)."""
+        import sounddevice as sd
+        import numpy as np
+        samplerate = 16000
+        frames_per_read = int(samplerate * 0.5)
+        stream = sd.InputStream(samplerate=samplerate, channels=1,
+                                dtype="float32", blocksize=frames_per_read)
+        stream.start()
+        log(f"gravador[{self.channel}]: usando sounddevice (motor do Ditado)")
+        try:
+            buf = []
+            buf_secs = 0.0
+            chunk_start = time.monotonic() - self.t0
+            while not self.stop_flag.is_set():
+                data, _overflow = stream.read(frames_per_read)
+                buf.append(np.array(data, copy=True))
+                buf_secs += frames_per_read / float(samplerate)
+                if buf_secs >= self.chunk_seconds:
+                    self._emit(np.concatenate(buf), samplerate, chunk_start)
+                    buf, buf_secs = [], 0.0
+                    chunk_start = time.monotonic() - self.t0
+            if buf:
+                self._emit(np.concatenate(buf), samplerate, chunk_start)
+        finally:
+            try:
+                stream.stop(); stream.close()
+            except Exception:
+                pass
 
     def run(self):
         com_ok = False
@@ -325,6 +361,14 @@ class ChannelRecorder(threading.Thread):
             except Exception:
                 pass
         try:
+            if self.device_kind == "mic":
+                # motor preferido: sounddevice (não exige formato 0xFFFE)
+                try:
+                    self._run_mic_sounddevice()
+                    return
+                except Exception as e:
+                    log(f"gravador[{self.channel}]: sounddevice indisponível "
+                        f"({e}) — tentando soundcard")
             import soundcard as sc
             if self.device_kind == "mic":
                 dev = sc.default_microphone()
@@ -379,6 +423,7 @@ class ChannelRecorder(threading.Thread):
         mono16k = downsample_to_16k(arr, samplerate)
         if rms_level(mono16k) < 0.0015:   # bloco silencioso: não gasta cota
             return
+        self.blocos_com_voz += 1
         wav = float_to_wav_bytes(mono16k, 16000)
         self.out_queue.put((chunk_start, self.channel, wav))
 
@@ -504,18 +549,63 @@ class AtaApp:
         self.notify("Gravando a reunião. Use o atalho ou a janelinha para encerrar.")
         self._show_overlay()
 
-        # sentinela: se um gravador morrer no nascimento, avisa ALTO na hora
-        def vigia_nascimento():
-            time.sleep(5)
-            if not self.recording:
-                return
-            mortos = [r.channel for r in self._recorders if r.error]
-            if mortos:
-                self.notify("⚠️ PROBLEMA NA GRAVAÇÃO: canal "
-                            + " e ".join(mortos) +
-                            " falhou ao iniciar! Encerre e tente de novo. "
-                            "Detalhes no app.log.")
-        threading.Thread(target=vigia_nascimento, daemon=True).start()
+        # sentinela contínua: vigia a reunião INTEIRA (não só o nascimento).
+        # Grita com JANELA (não notificação discreta) se: (a) um gravador
+        # morreu, ou (b) o canal do microfone ficou 3 minutos sem captar voz
+        # — caso de campo 04/11/2026: mic morto + reunião presencial =
+        # 36 min gravando silêncio dos alto-falantes e ata vazia.
+        def vigia_reuniao():
+            ja_avisou_morte = False
+            ja_avisou_mudo = False
+            while self.recording:
+                time.sleep(5)
+                if not self.recording:
+                    return
+                mortos = [r.channel for r in self._recorders if r.error]
+                if mortos and not ja_avisou_morte:
+                    ja_avisou_morte = True
+                    beep(400, 400); beep(400, 400)
+                    self._alerta_urgente(
+                        "PROBLEMA NA GRAVAÇÃO!\n\n"
+                        "O canal " + " e ".join(mortos) + " FALHOU.\n"
+                        "Sua fala pode NÃO estar sendo gravada.\n\n"
+                        "Recomendação: encerre (Ctrl+Shift+R), feche e abra "
+                        "o app, e inicie de novo. Detalhes no app.log.")
+                decorrido = time.monotonic() - self._t0
+                mic = next((r for r in self._recorders
+                            if r.device_kind == "mic" and not r.error), None)
+                if (mic and decorrido > 180 and mic.blocos_com_voz == 0
+                        and not ja_avisou_mudo):
+                    ja_avisou_mudo = True
+                    beep(400, 400); beep(400, 400)
+                    self._alerta_urgente(
+                        "MICROFONE MUDO!\n\n"
+                        "Já se passaram 3 minutos e o microfone não captou "
+                        "NENHUMA fala.\n\n"
+                        "Verifique: o microfone certo está selecionado no "
+                        "Windows? Está ligado/sem mute? Fale perto dele.\n\n"
+                        "Se a reunião é presencial, a sua voz é o canal "
+                        "principal — melhor resolver agora do que descobrir "
+                        "no final.")
+        threading.Thread(target=vigia_reuniao, daemon=True).start()
+
+    def _alerta_urgente(self, msg):
+        """Alerta impossível de ignorar: janela topmost + notificação."""
+        self.notify("⚠️ " + msg.splitlines()[0])
+        log("ALERTA URGENTE: " + msg.replace("\n", " | "))
+
+        def janela():
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes("-topmost", True)
+                messagebox.showwarning(f"{APP_NAME} — ATENÇÃO", msg, parent=root)
+                root.destroy()
+            except Exception as e:
+                log(f"alerta urgente: janela falhou ({e})")
+        threading.Thread(target=janela, daemon=True).start()
 
     def stop_meeting(self):
         if not self.recording:
@@ -1177,6 +1267,21 @@ class AtaApp:
     def run(self):
         APP_DIR.mkdir(parents=True, exist_ok=True)
         MEETINGS_DIR.mkdir(parents=True, exist_ok=True)
+        # dependência nova (sounddevice, motor do mic desde a v1.0.7):
+        # updates via bandeja só trocam arquivos — instala se faltar
+        try:
+            import sounddevice  # noqa: F401
+        except ImportError:
+            log("sounddevice ausente — instalando no venv…")
+            try:
+                import subprocess
+                subprocess.run([sys.executable, "-m", "pip", "install",
+                                "--quiet", "sounddevice>=0.4.6"],
+                               timeout=180, check=True)
+                log("sounddevice instalado com sucesso")
+            except Exception as e:
+                log(f"sounddevice: instalação falhou ({e}) — "
+                    "mic usará soundcard como reserva")
         # Pré-carrega a biblioteca de áudio NA THREAD PRINCIPAL, com o COM
         # ainda virgem. A soundcard inicializa o COM ao ser importada e
         # TRATA "já inicializado" como erro fatal (Error 0x100000001 /

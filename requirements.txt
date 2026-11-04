@@ -5,3 +5,4 @@ pystray==0.19.5
 Pillow>=10.0
 numpy>=1.26
 soundcard>=0.4.3
+sounddevice>=0.4.6

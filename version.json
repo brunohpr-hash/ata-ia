@@ -1,4 +1,4 @@
 {
-  "version": "1.0.6",
-  "changelog": "Correção do alarme falso 'Escuta do teclado travou': o teste de vida agora injeta a tecla fantasma direto no Windows (VK_F24) e, se a injeção não for comprovada, a verificação é pulada em vez de contar como falha. Fim dos reinícios indevidos a cada poucos minutos."
+  "version": "1.0.7",
+  "changelog": "Microfone blindado: novo motor de captura (o mesmo do Ditado IA, compatível com qualquer microfone — corrige falha com mics de webcam como Logi C270) + VIGIA DA REUNIÃO INTEIRA: se um canal falhar ou o microfone ficar 3 minutos sem captar voz, o app toca alerta sonoro e abre janela de aviso NA HORA — nunca mais descobrir no final que a reunião não foi gravada."
 }
