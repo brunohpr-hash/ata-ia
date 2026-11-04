@@ -1,4 +1,4 @@
 {
-  "version": "1.0.7",
-  "changelog": "Microfone blindado: novo motor de captura (o mesmo do Ditado IA, compatível com qualquer microfone — corrige falha com mics de webcam como Logi C270) + VIGIA DA REUNIÃO INTEIRA: se um canal falhar ou o microfone ficar 3 minutos sem captar voz, o app toca alerta sonoro e abre janela de aviso NA HORA — nunca mais descobrir no final que a reunião não foi gravada."
+  "version": "1.0.8",
+  "changelog": "CORRECAO URGENTE do looping de reunioes fantasma: o teste de vida nao pode mais acionar o Ctrl+Shift+R (imunidade + limpeza de teclas presas), comandos duplicados em menos de 3s sao ignorados e o contador na tela nao empilha mais (overlay antigo e fechado antes de abrir outro)."
 }

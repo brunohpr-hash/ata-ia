@@ -29,7 +29,7 @@ import requests
 from PIL import Image, ImageDraw
 
 APP_NAME = "Ata IA"
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 UPDATE_REPO = "brunohpr-hash/ata-ia"
 UPDATE_RAW = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main"
 APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "AtaIA"
@@ -482,6 +482,7 @@ class AtaApp:
         self.busy = False
         self._recovering = False
         self._last_key_evt = 0.0  # pulso da escuta global (prova de vida)
+        self._probe_until = 0.0  # janela do teste de vida: hotkeys surdos
         self.icon = None
         self._recorders = []
         self._transcriber = None
@@ -514,6 +515,15 @@ class AtaApp:
 
     # ---------- reunião ao vivo
     def toggle_meeting(self):
+        if time.monotonic() < getattr(self, "_probe_until", 0):
+            log("atalho ignorado: janela do teste de vida")
+            return
+        # debounce: 2 toggles em menos de 3s = eco/fantasma, nunca intencao
+        agora = time.monotonic()
+        if agora - getattr(self, "_last_toggle", 0.0) < 3.0:
+            log("toggle ignorado: debounce (menos de 3s do anterior)")
+            return
+        self._last_toggle = agora
         if self.recording:
             threading.Thread(target=self.stop_meeting, daemon=True).start()
         else:
@@ -676,6 +686,13 @@ class AtaApp:
 
     # ---------- overlay da gravação
     def _show_overlay(self):
+        # mata overlay anterior antes de criar outro (contador empilhado
+        # que "nao sai da tela" — caso de campo 04/11/2026)
+        try:
+            if self._overlay_stop is not None:
+                self._overlay_stop.set()
+        except Exception:
+            pass
         stop_evt = threading.Event()
         self._overlay_stop = stop_evt
 
@@ -1069,7 +1086,19 @@ class AtaApp:
             try:
                 if self.recording or self.busy or self._recovering:
                     continue
+                # limpa teclas "presas" na memoria da lib (apertar registrado
+                # sem o soltar — re-registro no meio de um atalho faz isso).
+                # Estado preso + evento fantasma = atalho re-disparando sozinho
+                # (caso de campo 04/11/2026: Ata iniciando/encerrando reunioes
+                # em loop a cada ronda).
+                try:
+                    keyboard._pressed_events.clear()
+                except Exception:
+                    pass
                 self.register_hotkey()
+                # imunidade: enquanto o teste roda, os atalhos do app ficam
+                # surdos — a tecla fantasma JAMAIS pode virar acao real
+                self._probe_until = time.monotonic() + 2.0
                 t0 = time.monotonic()
                 injetou = False
                 if os.name == "nt":
