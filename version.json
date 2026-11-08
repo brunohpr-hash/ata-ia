@@ -1,4 +1,4 @@
 {
   "version": "1.0.10",
-  "changelog": "Atualizador à prova de cache: a verificação de versão e o download passam a ignorar o cache do GitHub/CDN — acaba o 'já está atualizado' quando há versão nova."
+  "changelog": "Atualizador à prova de cache: a verificação consulta o último commit direto na API do GitHub e baixa pela URL imutável dessa versão — acaba o 'já está atualizado' quando há versão nova."
 }

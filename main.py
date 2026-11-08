@@ -229,9 +229,32 @@ class Pipeline:
 UPDATE_FILES = ["main.py", "requirements.txt", "LEIA-ME.md", "iniciar.bat", "instalar.bat"]
 
 
+_UPDATE_SHA = {"sha": None, "at": 0.0}
+
+
+def _update_base():
+    """URL base imutável do último commit (raw/<sha>/). A CDN do raw.githubusercontent.com cacheia /main por
+    ~5 min por região e ignora query string; a API de commits não tem esse cache. Cache local de 60 s."""
+    now = time.time()
+    if _UPDATE_SHA["sha"] and now - _UPDATE_SHA["at"] < 60:
+        return f"https://raw.githubusercontent.com/{UPDATE_REPO}/{_UPDATE_SHA['sha']}"
+    try:
+        r = requests.get(f"https://api.github.com/repos/{UPDATE_REPO}/commits/main",
+                         headers={"Accept": "application/vnd.github+json", **NOCACHE}, timeout=10)
+        if r.status_code == 200:
+            sha = r.json().get("sha")
+            if sha:
+                _UPDATE_SHA.update(sha=sha, at=now)
+                return f"https://raw.githubusercontent.com/{UPDATE_REPO}/{sha}"
+        log(f"update: API de commits respondeu {r.status_code}; usando /main (pode estar em cache)")
+    except Exception as e:
+        log(f"update: falha ao resolver SHA ({e}); usando /main")
+    return UPDATE_RAW
+
+
 def check_remote_version(timeout=10):
     try:
-        r = requests.get(f"{UPDATE_RAW}/version.json?nc={int(time.time())}", headers=NOCACHE, timeout=timeout)
+        r = requests.get(f"{_update_base()}/version.json", headers=NOCACHE, timeout=timeout)
         r.raise_for_status()
         d = r.json()
         return d.get("version"), d.get("changelog", "")
@@ -251,7 +274,7 @@ def download_update(app_dir):
     updated = []
     for fname in UPDATE_FILES:
         try:
-            r = requests.get(f"{UPDATE_RAW}/{fname}?nc={int(time.time())}", headers=NOCACHE, timeout=30)
+            r = requests.get(f"{_update_base()}/{fname}", headers=NOCACHE, timeout=30)
             if r.status_code != 200:
                 continue
             dest = app_dir / fname
