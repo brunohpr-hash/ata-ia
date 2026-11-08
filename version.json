@@ -1,4 +1,4 @@
 {
-  "version": "1.0.9",
-  "changelog": "Compatível com o novo limite da Groq (1.000 tokens de saída/minuto no plano grátis): respostas da IA limitadas a 900 tokens — corrige o erro 429 'Request too large' que deixava o app sem resposta."
+  "version": "1.0.10",
+  "changelog": "Atualizador à prova de cache: a verificação de versão e o download passam a ignorar o cache do GitHub/CDN — acaba o 'já está atualizado' quando há versão nova."
 }
