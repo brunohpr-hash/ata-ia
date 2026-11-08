@@ -29,7 +29,8 @@ import requests
 from PIL import Image, ImageDraw
 
 APP_NAME = "Ata IA"
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
+MAX_OUT_TOKENS = 900  # Groq free: OTPM 1000/min; acima disso 429 "Request too large"
 UPDATE_REPO = "brunohpr-hash/ata-ia"
 UPDATE_RAW = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main"
 APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "AtaIA"
@@ -205,6 +206,7 @@ class Pipeline:
             json={
                 "model": p["llm_model"],
                 "temperature": 0.3,
+                "max_tokens": MAX_OUT_TOKENS,
                 "messages": [
                     {"role": "system", "content": ATA_PROMPT},
                     {"role": "user",

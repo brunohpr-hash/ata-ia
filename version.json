@@ -1,4 +1,4 @@
 {
-  "version": "1.0.8",
-  "changelog": "CORRECAO URGENTE do looping de reunioes fantasma: o teste de vida nao pode mais acionar o Ctrl+Shift+R (imunidade + limpeza de teclas presas), comandos duplicados em menos de 3s sao ignorados e o contador na tela nao empilha mais (overlay antigo e fechado antes de abrir outro)."
+  "version": "1.0.9",
+  "changelog": "Compatível com o novo limite da Groq (1.000 tokens de saída/minuto no plano grátis): respostas da IA limitadas a 900 tokens — corrige o erro 429 'Request too large' que deixava o app sem resposta."
 }
