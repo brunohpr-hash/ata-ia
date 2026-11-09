@@ -14,9 +14,9 @@ Família do Ditado IA e do Captura IA: mesma chave Groq, mesma atualização pel
 ## Como usar
 
 **Reunião ao vivo** (Zoom, Meet, Teams, telefone no viva-voz, presencial):
-1. Pressione **Ctrl+Shift+R** (ou bandeja → "▶ Iniciar reunião")
+1. Pressione **Ctrl+Shift+A** (ou bandeja → "▶ Iniciar reunião")
 2. Converse normalmente — a janelinha verde mostra que está gravando
-3. Ao final: **Ctrl+Shift+R** de novo (ou botão "⏹ Encerrar e gerar ata")
+3. Ao final: **Ctrl+Shift+A** de novo (ou botão "⏹ Encerrar e gerar ata")
 4. Em instantes: ata + transcrição completa na tela, tudo salvo no Histórico
 
 **Arquivo pronto** (áudio de WhatsApp, gravação do celular):

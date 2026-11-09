@@ -29,7 +29,7 @@ import requests
 from PIL import Image, ImageDraw
 
 APP_NAME = "Ata IA"
-APP_VERSION = "1.0.10"
+APP_VERSION = "1.0.11"
 MAX_OUT_TOKENS = 900  # Groq free: OTPM 1000/min; acima disso 429 "Request too large"
 UPDATE_REPO = "brunohpr-hash/ata-ia"
 UPDATE_RAW = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main"
@@ -39,7 +39,7 @@ CONFIG_PATH = APP_DIR / "config.json"
 MEETINGS_DIR = APP_DIR / "reunioes"
 
 DEFAULT_CONFIG = {
-    "hotkey": "ctrl+shift+r",      # inicia/encerra a reunião
+    "hotkey": "ctrl+shift+a",      # padrão da suíte: Ctrl+Shift+primeira letra
     "provider": "groq",
     "api_key": "",
     "chunk_seconds": 60,            # transcreve em blocos de 1 min
