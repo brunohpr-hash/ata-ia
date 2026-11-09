@@ -29,7 +29,7 @@ import requests
 from PIL import Image, ImageDraw
 
 APP_NAME = "Ata IA"
-APP_VERSION = "1.0.11"
+APP_VERSION = "1.0.12"
 MAX_OUT_TOKENS = 900  # Groq free: OTPM 1000/min; acima disso 429 "Request too large"
 UPDATE_REPO = "brunohpr-hash/ata-ia"
 UPDATE_RAW = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main"
@@ -285,6 +285,110 @@ def download_update(app_dir):
         except Exception as e:
             log(f"update: falha baixando {fname}: {e}")
     return updated
+
+
+# ---------- prova de vida: quando o teste F24 NAO e confiavel
+_RONDA_MARCA = "ronda_restart.json"
+_EU_ELEVADO = None
+
+
+def _processo_elevado(hproc):
+    """True/False se o token do processo e elevado; None se nao deu p/ ler."""
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.windll.advapi32
+    kernel32 = ctypes.windll.kernel32
+    tok = wintypes.HANDLE()
+    if not advapi32.OpenProcessToken(hproc, 0x0008, ctypes.byref(tok)):
+        return None
+    try:
+        elev = wintypes.DWORD()
+        ret = wintypes.DWORD()
+        if not advapi32.GetTokenInformation(tok, 20, ctypes.byref(elev),
+                                            4, ctypes.byref(ret)):
+            return None
+        return bool(elev.value)
+    finally:
+        kernel32.CloseHandle(tok)
+
+
+def _teste_impossivel():
+    """Diz POR QUE o teste da tecla fantasma nao vale agora ("" = vale).
+    O Windows (UIPI) descarta tecla injetada quando a janela da frente roda
+    como administrador, e ninguem recebe tecla na tela segura (UAC,
+    Ctrl+Alt+Del, bloqueio). Nesses casos o teste falha com a escuta VIVA
+    e reiniciar nao adianta (caso de campo 09/11/2026: os 4 apps
+    reiniciaram 3x em 8 min com o Bruno trabalhando normalmente)."""
+    global _EU_ELEVADO
+    if os.name != "nt":
+        return ""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        user32.OpenInputDesktop.restype = ctypes.c_void_p
+        user32.GetForegroundWindow.restype = ctypes.c_void_p
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        # 1) tela segura / outra area de trabalho recebendo o teclado
+        hdesk = user32.OpenInputDesktop(0, False, 0x0001)
+        if not hdesk:
+            return "tela segura do Windows ativa"
+        try:
+            buf = ctypes.create_unicode_buffer(256)
+            need = wintypes.DWORD()
+            if user32.GetUserObjectInformationW(ctypes.c_void_p(hdesk), 2, buf,
+                                                ctypes.sizeof(buf),
+                                                ctypes.byref(need)):
+                if buf.value and buf.value.lower() != "default":
+                    return f"area de trabalho '{buf.value}' em foco"
+        finally:
+            user32.CloseDesktop(ctypes.c_void_p(hdesk))
+        # 2) janela da frente de administrador (e eu nao sou)
+        if _EU_ELEVADO is None:
+            _EU_ELEVADO = bool(_processo_elevado(
+                ctypes.c_void_p(kernel32.GetCurrentProcess())))
+        if _EU_ELEVADO:
+            return ""
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return ""
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(pid))
+        if not pid.value or pid.value == os.getpid():
+            return ""
+        hp = kernel32.OpenProcess(0x1000, False, pid.value)
+        if not hp:
+            return "janela da frente e protegida do sistema"
+        try:
+            elev = _processo_elevado(ctypes.c_void_p(hp))
+        finally:
+            kernel32.CloseHandle(ctypes.c_void_p(hp))
+        if elev is None:
+            return "janela da frente e protegida do sistema"
+        if elev:
+            return "janela da frente roda como administrador"
+    except Exception as e:
+        log(f"ronda: checagem de ambiente falhou ({e})")
+    return ""
+
+
+def _reinicio_recente(janela=900):
+    """A ronda ja reiniciou o app ha menos de `janela` segundos?"""
+    try:
+        d = json.loads((APP_DIR / _RONDA_MARCA).read_text("utf-8"))
+        return (time.time() - float(d.get("ts", 0))) < janela
+    except Exception:
+        return False
+
+
+def _marcar_reinicio():
+    try:
+        (APP_DIR / _RONDA_MARCA).write_text(json.dumps({"ts": time.time()}),
+                                           "utf-8")
+    except Exception:
+        pass
 
 
 def restart_app(icon=None):
@@ -1107,6 +1211,7 @@ class AtaApp:
         de escuta morreu (caso de campo Ditado 04/11/2026) — 2 falhas
         seguidas confirmam gancho morto e o app se reinicia sozinho."""
         falhas = 0
+        fim_ultimo_teste = time.monotonic()
         while True:
             time.sleep(120)
             try:
@@ -1124,6 +1229,10 @@ class AtaApp:
                 self.register_hotkey()
                 # imunidade: enquanto o teste roda, os atalhos do app ficam
                 # surdos — a tecla fantasma JAMAIS pode virar acao real
+                motivo_skip = _teste_impossivel()
+                if motivo_skip:
+                    log(f"ronda: verificacao pulada ({motivo_skip})")
+                    continue
                 self._probe_until = time.monotonic() + 2.0
                 t0 = time.monotonic()
                 injetou = False
@@ -1152,13 +1261,29 @@ class AtaApp:
                     continue
                 if self._last_key_evt >= t0:
                     falhas = 0
+                    fim_ultimo_teste = time.monotonic()
                     log("ronda: atalho religado e escuta VERIFICADA viva")
                 else:
+                    if self._last_key_evt > fim_ultimo_teste:
+                        # houve tecla REAL desde a ultima ronda: o gancho
+                        # esta vivo, quem falhou foi so o teste
+                        falhas = 0
+                        log("ronda: teste nao passou, mas houve tecla real recente — escuta viva")
+                        fim_ultimo_teste = time.monotonic()
+                        continue
                     falhas += 1
                     log(f"ronda: escuta NAO respondeu ao teste ({falhas}x)")
                     if falhas >= 2:
-                        log("ronda: gancho morto confirmado — reiniciando o app")
                         falhas = 0
+                        if _reinicio_recente():
+                            # ja reiniciei ha pouco e nao resolveu: e o
+                            # ambiente bloqueando o teste, nao o app.
+                            # Reiniciar de novo so gera aviso inutil.
+                            log("ronda: falhou de novo logo apos reinicio — ambiente bloqueando o teste; sem reiniciar")
+                            fim_ultimo_teste = time.monotonic()
+                            continue
+                        log("ronda: gancho morto confirmado — reiniciando o app")
+                        _marcar_reinicio()
                         try:
                             self.notify("Escuta do teclado travou — reiniciando sozinho…")
                         except Exception:

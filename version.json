@@ -1,4 +1,4 @@
 {
-  "version": "1.0.11",
-  "changelog": "Padrão da suíte: novas instalações começam com Ctrl+Shift+A (Ata IA)."
+  "version": "1.0.12",
+  "changelog": "Fim do falso alarme 'Escuta do teclado travou': o teste não roda quando a janela da frente é de administrador ou protegida, tecla real recente prova que a escuta está viva, e o app não reinicia em sequência."
 }
